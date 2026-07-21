@@ -53,7 +53,7 @@ contract NFTMarketplaceTest is Test {
         marketplace.publishNFT(address(mockedNFT), tokenId, price);
         vm.stopPrank();
 
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
     }
@@ -71,7 +71,7 @@ contract NFTMarketplaceTest is Test {
         marketplace.publishNFT(address(mockedNFT), tokenId, price);
         vm.stopPrank();
 
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
@@ -80,7 +80,7 @@ contract NFTMarketplaceTest is Test {
         marketplace.unpublishNFT(address(mockedNFT), tokenId);
         vm.stopPrank();
 
-        (address nftSeller2, uint256 nftPrice2) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller2,, uint256 nftPrice2) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice2 == 0);
         assert(nftSeller2 == address(0));
     }
@@ -100,7 +100,7 @@ contract NFTMarketplaceTest is Test {
         marketplace.publishNFT(address(mockedNFT), tokenId, price);
         vm.stopPrank();
 
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
@@ -121,7 +121,7 @@ contract NFTMarketplaceTest is Test {
         marketplace.publishNFT(address(mockedNFT), tokenId, price);
         vm.stopPrank();
 
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == price);
         assert(nftSeller == address(rejectEtherAddress));
 
@@ -144,7 +144,7 @@ contract NFTMarketplaceTest is Test {
         IERC721(mockedNFT).approve(address(marketplace), tokenId);
         vm.stopPrank();
 
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
@@ -158,7 +158,7 @@ contract NFTMarketplaceTest is Test {
         );
         require(success, "Buy NFT failed");
 
-        (nftSeller, nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        (nftSeller,, nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
         assert(nftPrice == 0);
         assert(nftSeller == address(0));
         address newOwner = IERC721(address(mockedNFT)).ownerOf(tokenId);
@@ -188,7 +188,7 @@ contract NFTMarketplaceTest is Test {
         vm.stopPrank();
 
         // 5. Verify the listing was stored correctly
-        (address nftSeller, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenIdArg);
+        (address nftSeller,, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenIdArg);
         assertEq(nftPrice, priceArg);
         assertEq(nftSeller, seller);
 
@@ -318,5 +318,30 @@ contract NFTMarketplaceTest is Test {
 
         assertEq(sellerAddr.balance, sellerBalanceBefore + price);
         assertEq(revertingNFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    // #### Test ERC-20 Payments ####
+    function testPublishNFTThreeArgOverloadDefaultsToETH() public {
+        mockedNFT.mint(sellerAddr, tokenId);
+        vm.startPrank(sellerAddr);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price);
+        vm.stopPrank();
+
+        (, address paymentToken,) = marketplace.listing(address(mockedNFT), tokenId);
+        assertEq(paymentToken, address(0));
+    }
+
+    function testPublishNFTWithERC20PaymentToken() public {
+        MockERC20 token = new MockERC20();
+        mockedNFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price, address(token));
+        vm.stopPrank();
+
+        (address seller, address paymentToken, uint256 nftPrice) = marketplace.listing(address(mockedNFT), tokenId);
+        assertEq(seller, sellerAddr);
+        assertEq(paymentToken, address(token));
+        assertEq(nftPrice, price);
     }
 }

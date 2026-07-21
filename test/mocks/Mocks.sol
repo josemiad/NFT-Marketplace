@@ -3,6 +3,7 @@ pragma solidity ^0.8.34;
 
 import "../../lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import "../../lib/openzeppelin-contracts/contracts/token/common/ERC2981.sol";
+import "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../../lib/openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
 import "../../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
@@ -19,6 +20,14 @@ contract RejectEther {
     // Reverting inside receive() forces .call{value: ...}("") to return success = false
     receive() external payable {
         revert("I refuse money");
+    }
+}
+
+contract MockERC20 is ERC20 {
+    constructor() ERC20("Mock USD", "MUSD") {}
+
+    function mint(address to_, uint256 amount_) external {
+        _mint(to_, amount_);
     }
 }
 

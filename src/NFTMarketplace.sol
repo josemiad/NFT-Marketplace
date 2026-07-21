@@ -4,21 +4,28 @@
 // Solidity version
 pragma solidity ^0.8.34;
 
-import "../lib/openzeppelin-contracts/contracts/interfaces/IERC721.sol";
 import "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "../lib/openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
+import "../lib/openzeppelin-contracts/contracts/interfaces/IERC721.sol";
 import "../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
 contract NFTMarketplace is ReentrancyGuard {
     struct NFTList {
         address seller;
+        address paymentToken;
         uint256 price;
     }
 
     // NFTAddress -> tokenId --> NFTListElement
     mapping(address => mapping(uint256 => NFTList)) public listing;
 
-    event NFTListed(address indexed seller_, address indexed nftAddress_, uint256 indexed tokenId_, uint256 price_);
+    event NFTListed(
+        address indexed seller_,
+        address indexed nftAddress_,
+        uint256 indexed tokenId_,
+        uint256 price_,
+        address paymentToken_
+    );
     event NFTUnpublished(address indexed seller_, address indexed nftAddress_, uint256 indexed tokenId_);
     event NFTSold(
         address indexed nftBuyer_,
@@ -34,16 +41,21 @@ contract NFTMarketplace is ReentrancyGuard {
     constructor() {}
 
     // Publish NFT
-    function publishNFT(address nftAddress_, uint256 tokenId_, uint256 price_) external nonReentrant {
+    function publishNFT(address nftAddress_, uint256 tokenId_, uint256 price_) external {
+        publishNFT(nftAddress_, tokenId_, price_, address(0));
+    }
+
+    function publishNFT(address nftAddress_, uint256 tokenId_, uint256 price_, address paymentToken_)
+        public
+        nonReentrant
+    {
         require(price_ > 0, "Price can not be 0");
         address nftOwner = IERC721(nftAddress_).ownerOf(tokenId_);
         require(nftOwner == msg.sender, "You are not the Owner of the NFT");
 
-        NFTList memory nftParameters = NFTList({seller: msg.sender, price: price_});
+        listing[nftAddress_][tokenId_] = NFTList({seller: msg.sender, paymentToken: paymentToken_, price: price_});
 
-        listing[nftAddress_][tokenId_] = nftParameters;
-
-        emit NFTListed(msg.sender, nftAddress_, tokenId_, price_);
+        emit NFTListed(msg.sender, nftAddress_, tokenId_, price_, paymentToken_);
     }
 
     // Buy NFT
