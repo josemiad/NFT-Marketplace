@@ -344,4 +344,40 @@ contract NFTMarketplaceTest is Test {
         assertEq(paymentToken, address(token));
         assertEq(nftPrice, price);
     }
+
+    function testBuyNFTWithERC20PaymentSucceeds() public {
+        MockERC20 token = new MockERC20();
+        mockedNFT.mint(sellerAddr, tokenId);
+        token.mint(buyerAddr, price);
+
+        vm.startPrank(sellerAddr);
+        mockedNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price, address(token));
+        vm.stopPrank();
+
+        vm.startPrank(buyerAddr);
+        token.approve(address(marketplace), price);
+        marketplace.buyNFT(address(mockedNFT), tokenId);
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(sellerAddr), price);
+        assertEq(token.balanceOf(buyerAddr), 0);
+        assertEq(mockedNFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    function testBuyNFTRejectsETHForERC20Listing() public {
+        MockERC20 token = new MockERC20();
+        mockedNFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        mockedNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price, address(token));
+        vm.stopPrank();
+
+        vm.deal(buyerAddr, price);
+        vm.startPrank(buyerAddr);
+        vm.expectRevert("ETH not accepted for this listing");
+        marketplace.buyNFT{value: price}(address(mockedNFT), tokenId);
+        vm.stopPrank();
+    }
 }

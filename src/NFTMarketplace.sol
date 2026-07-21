@@ -5,11 +5,15 @@
 pragma solidity ^0.8.34;
 
 import "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
 import "../lib/openzeppelin-contracts/contracts/interfaces/IERC721.sol";
 import "../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
 contract NFTMarketplace is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     struct NFTList {
         address seller;
         address paymentToken;
@@ -32,7 +36,8 @@ contract NFTMarketplace is ReentrancyGuard {
         address indexed seller_,
         address indexed nftAddress_,
         uint256 tokenId_,
-        uint256 price_
+        uint256 price_,
+        address paymentToken_
     );
     event RoyaltyPaid(
         address indexed nftAddress_, uint256 indexed tokenId_, address indexed receiver_, uint256 amount_
@@ -62,25 +67,39 @@ contract NFTMarketplace is ReentrancyGuard {
     function buyNFT(address nftAddress_, uint256 tokenId_) external payable nonReentrant {
         NFTList memory nftParameters = listing[nftAddress_][tokenId_];
         require(nftParameters.price > 0, "The NFT does not exist");
-        require(msg.value == nftParameters.price, "Incorrect price");
+
+        if (nftParameters.paymentToken == address(0)) {
+            require(msg.value == nftParameters.price, "Incorrect price");
+        } else {
+            require(msg.value == 0, "ETH not accepted for this listing");
+        }
 
         delete listing[nftAddress_][tokenId_];
 
         (address royaltyReceiver, uint256 royaltyAmount) = _royaltyInfo(nftAddress_, tokenId_, nftParameters.price);
         uint256 sellerAmount = nftParameters.price - royaltyAmount;
 
-        if (royaltyAmount > 0) {
-            (bool royaltySuccess,) = royaltyReceiver.call{value: royaltyAmount}("");
-            require(royaltySuccess, "Fail the royalty payment process");
-            emit RoyaltyPaid(nftAddress_, tokenId_, royaltyReceiver, royaltyAmount);
+        if (nftParameters.paymentToken == address(0)) {
+            if (royaltyAmount > 0) {
+                (bool royaltySuccess,) = royaltyReceiver.call{value: royaltyAmount}("");
+                require(royaltySuccess, "Fail the royalty payment process");
+                emit RoyaltyPaid(nftAddress_, tokenId_, royaltyReceiver, royaltyAmount);
+            }
+            (bool success,) = nftParameters.seller.call{value: sellerAmount}("");
+            require(success, "Fail the payment process");
+        } else {
+            if (royaltyAmount > 0) {
+                IERC20(nftParameters.paymentToken).safeTransferFrom(msg.sender, royaltyReceiver, royaltyAmount);
+                emit RoyaltyPaid(nftAddress_, tokenId_, royaltyReceiver, royaltyAmount);
+            }
+            IERC20(nftParameters.paymentToken).safeTransferFrom(msg.sender, nftParameters.seller, sellerAmount);
         }
-
-        (bool success,) = nftParameters.seller.call{value: sellerAmount}("");
-        require(success, "Fail the payment process");
 
         IERC721(nftAddress_).safeTransferFrom(nftParameters.seller, msg.sender, tokenId_);
 
-        emit NFTSold(msg.sender, nftParameters.seller, nftAddress_, tokenId_, nftParameters.price);
+        emit NFTSold(
+            msg.sender, nftParameters.seller, nftAddress_, tokenId_, nftParameters.price, nftParameters.paymentToken
+        );
     }
 
     // Unpublish NFT
