@@ -421,4 +421,31 @@ contract NFTMarketplaceTest is Test {
         marketplace.buyNFT(address(mockedNFT), tokenId);
         vm.stopPrank();
     }
+
+    function testFuzz_BuyNFTWithERC20Correctly(address seller, address buyer, uint256 tokenIdArg, uint256 priceArg)
+        public
+    {
+        vm.assume(uint160(seller) > 255 && uint160(buyer) > 255);
+        vm.assume(seller.code.length == 0 && buyer.code.length == 0);
+        vm.assume(seller != buyer);
+        priceArg = bound(priceArg, 1, 1_000_000 ether);
+
+        MockERC20 token = new MockERC20();
+        mockedNFT.mint(seller, tokenIdArg);
+        token.mint(buyer, priceArg);
+
+        vm.startPrank(seller);
+        mockedNFT.approve(address(marketplace), tokenIdArg);
+        marketplace.publishNFT(address(mockedNFT), tokenIdArg, priceArg, address(token));
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+        token.approve(address(marketplace), priceArg);
+        marketplace.buyNFT(address(mockedNFT), tokenIdArg);
+        vm.stopPrank();
+
+        assertEq(mockedNFT.ownerOf(tokenIdArg), buyer);
+        assertEq(token.balanceOf(seller), priceArg);
+        assertEq(token.balanceOf(buyer), 0);
+    }
 }
