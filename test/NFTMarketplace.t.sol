@@ -281,4 +281,42 @@ contract NFTMarketplaceTest is Test {
         assertEq(sellerAddr.balance, sellerBalanceBefore + price);
         assertEq(maliciousNFT.ownerOf(tokenId), buyerAddr);
     }
+
+    function testBuyNFTIgnoresRoyaltyWhenERC165CheckReverts() public {
+        NoERC165NFT noErc165NFT = new NoERC165NFT();
+        noErc165NFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        noErc165NFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(noErc165NFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(noErc165NFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+        assertEq(noErc165NFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    function testBuyNFTIgnoresRoyaltyWhenRoyaltyInfoReverts() public {
+        RevertingRoyaltyNFT revertingNFT = new RevertingRoyaltyNFT();
+        revertingNFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        revertingNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(revertingNFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(revertingNFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+        assertEq(revertingNFT.ownerOf(tokenId), buyerAddr);
+    }
 }

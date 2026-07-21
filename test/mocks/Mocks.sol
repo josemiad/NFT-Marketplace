@@ -54,3 +54,48 @@ contract MaliciousRoyaltyNFT is ERC721, IERC2981 {
         return interfaceId_ == type(IERC2981).interfaceId || super.supportsInterface(interfaceId_);
     }
 }
+
+// Deliberately does not implement ERC-165 at all — calling supportsInterface on it reverts,
+// exercising the outer catch in NFTMarketplace._royaltyInfo
+contract NoERC165NFT {
+    mapping(uint256 => address) private _owners;
+    mapping(uint256 => address) private _tokenApprovals;
+
+    function mint(address to_, uint256 tokenId_) external {
+        _owners[tokenId_] = to_;
+    }
+
+    function ownerOf(uint256 tokenId_) external view returns (address) {
+        return _owners[tokenId_];
+    }
+
+    function approve(address to_, uint256 tokenId_) external {
+        require(msg.sender == _owners[tokenId_], "Not owner");
+        _tokenApprovals[tokenId_] = to_;
+    }
+
+    function safeTransferFrom(address from_, address to_, uint256 tokenId_) external {
+        require(_owners[tokenId_] == from_, "Not owner");
+        require(msg.sender == from_ || msg.sender == _tokenApprovals[tokenId_], "Not authorized");
+        _owners[tokenId_] = to_;
+        delete _tokenApprovals[tokenId_];
+    }
+}
+
+// Claims ERC-2981 support via supportsInterface, but reverts inside royaltyInfo itself,
+// exercising the inner catch in NFTMarketplace._royaltyInfo
+contract RevertingRoyaltyNFT is ERC721, IERC2981 {
+    constructor() ERC721("Reverting Royalty", "RRN") {}
+
+    function mint(address to_, uint256 tokenId_) external {
+        _mint(to_, tokenId_);
+    }
+
+    function royaltyInfo(uint256, uint256) external pure returns (address, uint256) {
+        revert("royaltyInfo broken");
+    }
+
+    function supportsInterface(bytes4 interfaceId_) public view override(ERC721, IERC165) returns (bool) {
+        return interfaceId_ == type(IERC2981).interfaceId || super.supportsInterface(interfaceId_);
+    }
+}
