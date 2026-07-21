@@ -3,6 +3,8 @@ pragma solidity ^0.8.34;
 
 import "../../lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import "../../lib/openzeppelin-contracts/contracts/token/common/ERC2981.sol";
+import "../../lib/openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
+import "../../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock NFT", "MNFT") {}
@@ -33,5 +35,22 @@ contract MockNFT2981 is ERC721, ERC2981 {
 
     function supportsInterface(bytes4 interfaceId_) public view override(ERC721, ERC2981) returns (bool) {
         return super.supportsInterface(interfaceId_);
+    }
+}
+
+// Reports a royalty larger than the sale price, on purpose, to test the marketplace's guard
+contract MaliciousRoyaltyNFT is ERC721, IERC2981 {
+    constructor() ERC721("Malicious", "MAL") {}
+
+    function mint(address to_, uint256 tokenId_) external {
+        _mint(to_, tokenId_);
+    }
+
+    function royaltyInfo(uint256, uint256 salePrice_) external pure returns (address, uint256) {
+        return (address(0xBEEF), salePrice_ * 2);
+    }
+
+    function supportsInterface(bytes4 interfaceId_) public view override(ERC721, IERC165) returns (bool) {
+        return interfaceId_ == type(IERC2981).interfaceId || super.supportsInterface(interfaceId_);
     }
 }

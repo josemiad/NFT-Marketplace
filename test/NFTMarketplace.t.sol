@@ -262,4 +262,23 @@ contract NFTMarketplaceTest is Test {
         marketplace.buyNFT{value: price}(address(royaltyNFT), tokenId);
         vm.stopPrank();
     }
+
+    function testBuyNFTIgnoresRoyaltyExceedingPrice() public {
+        MaliciousRoyaltyNFT maliciousNFT = new MaliciousRoyaltyNFT();
+        maliciousNFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        maliciousNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(maliciousNFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(maliciousNFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+        assertEq(maliciousNFT.ownerOf(tokenId), buyerAddr);
+    }
 }

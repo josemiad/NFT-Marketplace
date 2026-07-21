@@ -93,7 +93,7 @@ contract NFTMarketplace is ReentrancyGuard {
         }
 
         try IERC2981(nftAddress_).royaltyInfo(tokenId_, salePrice_) returns (address r, uint256 amount) {
-            if (r == address(0) || amount == 0) return (address(0), 0);
+            if (r == address(0) || amount == 0 || amount > salePrice_) return (address(0), 0);
             return (r, amount);
         } catch {
             return (address(0), 0);
