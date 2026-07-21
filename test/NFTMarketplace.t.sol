@@ -245,4 +245,21 @@ contract NFTMarketplaceTest is Test {
 
         assertEq(sellerAddr.balance, sellerBalanceBefore + price);
     }
+
+    function testBuyNFTRoyaltyPaymentFailedReverts() public {
+        MockNFT2981 royaltyNFT = new MockNFT2981();
+        royaltyNFT.mint(sellerAddr, tokenId);
+        royaltyNFT.setDefaultRoyalty(address(rejectEtherAddress), 1000);
+
+        vm.startPrank(sellerAddr);
+        royaltyNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(royaltyNFT), tokenId, price);
+        vm.stopPrank();
+
+        vm.deal(buyerAddr, price);
+        vm.startPrank(buyerAddr);
+        vm.expectRevert("Fail the royalty payment process");
+        marketplace.buyNFT{value: price}(address(royaltyNFT), tokenId);
+        vm.stopPrank();
+    }
 }

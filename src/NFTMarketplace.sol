@@ -27,8 +27,9 @@ contract NFTMarketplace is ReentrancyGuard {
         uint256 tokenId_,
         uint256 price_
     );
-    event RoyaltyPaid(address indexed nftAddress_, uint256 indexed tokenId_, address indexed receiver_, uint256 amount_);
-
+    event RoyaltyPaid(
+        address indexed nftAddress_, uint256 indexed tokenId_, address indexed receiver_, uint256 amount_
+    );
 
     constructor() {}
 
@@ -98,6 +99,5 @@ contract NFTMarketplace is ReentrancyGuard {
             return (address(0), 0);
         }
     }
-    
 }
 
