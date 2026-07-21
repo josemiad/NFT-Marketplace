@@ -380,4 +380,45 @@ contract NFTMarketplaceTest is Test {
         marketplace.buyNFT{value: price}(address(mockedNFT), tokenId);
         vm.stopPrank();
     }
+
+    function testBuyNFTWithERC20AndRoyalty() public {
+        MockERC20 token = new MockERC20();
+        MockNFT2981 royaltyNFT = new MockNFT2981();
+        address royaltyReceiver = vm.addr(4);
+        royaltyNFT.mint(sellerAddr, tokenId);
+        royaltyNFT.setDefaultRoyalty(royaltyReceiver, 1000); // 10%
+        token.mint(buyerAddr, price);
+
+        vm.startPrank(sellerAddr);
+        royaltyNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(royaltyNFT), tokenId, price, address(token));
+        vm.stopPrank();
+
+        vm.startPrank(buyerAddr);
+        token.approve(address(marketplace), price);
+        marketplace.buyNFT(address(royaltyNFT), tokenId);
+        vm.stopPrank();
+
+        uint256 expectedRoyalty = (price * 1000) / 10000;
+        assertEq(token.balanceOf(royaltyReceiver), expectedRoyalty);
+        assertEq(token.balanceOf(sellerAddr), price - expectedRoyalty);
+        assertEq(royaltyNFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    function testBuyNFTRevertsWithoutERC20Allowance() public {
+        MockERC20 token = new MockERC20();
+        mockedNFT.mint(sellerAddr, tokenId);
+        token.mint(buyerAddr, price);
+
+        vm.startPrank(sellerAddr);
+        mockedNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price, address(token));
+        vm.stopPrank();
+
+        // buyerAddr never approved the marketplace to spend `token`
+        vm.startPrank(buyerAddr);
+        vm.expectRevert();
+        marketplace.buyNFT(address(mockedNFT), tokenId);
+        vm.stopPrank();
+    }
 }
