@@ -204,4 +204,45 @@ contract NFTMarketplaceTest is Test {
         assertEq(mockedNFT.ownerOf(tokenIdArg), buyer); // Verify ownership was transferred to the buyer
         assertEq(seller.balance, sellerBalanceBefore + priceArg); // Verify the seller received the payment
     }
+
+    // #### Test Royalties ####
+    function testBuyNFTSplitsRoyaltyToReceiver() public {
+        MockNFT2981 royaltyNFT = new MockNFT2981();
+        address royaltyReceiver = vm.addr(4);
+        royaltyNFT.mint(sellerAddr, tokenId);
+        royaltyNFT.setDefaultRoyalty(royaltyReceiver, 1000); // 10% (basis points out of 10000)
+
+        vm.startPrank(sellerAddr);
+        royaltyNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(royaltyNFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+        uint256 royaltyBalanceBefore = royaltyReceiver.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(royaltyNFT), tokenId);
+
+        uint256 expectedRoyalty = (price * 1000) / 10000;
+        assertEq(royaltyReceiver.balance, royaltyBalanceBefore + expectedRoyalty);
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price - expectedRoyalty);
+        assertEq(royaltyNFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    function testBuyNFTWithoutRoyaltySupportPaysFullPriceToSeller() public {
+        mockedNFT.mint(sellerAddr, tokenId);
+        vm.startPrank(sellerAddr);
+        mockedNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(mockedNFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(mockedNFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+    }
 }

@@ -250,7 +250,7 @@ Expected: both PASS.
 - [ ] **Step 6: Run the full suite and check coverage**
 
 Run: `forge test && forge coverage --report summary`
-Expected: all tests pass; `src/NFTMarketplace.sol` still at 100% lines/branches (the `catch` branches on a well-behaved mock won't be hit yet — that's fine, Task 3 and Task 4 exercise them).
+Expected: all tests pass; `src/NFTMarketplace.sol` coverage drops to roughly 88% lines / 81% branches — that's expected at this point, not a bug. Four spots in `_royaltyInfo`/`buyNFT` aren't exercised yet: the royalty-payment-failure `require` (closed by Task 3), the `r == address(0) || amount == 0` early return (closed by Task 4, once the price cap is added), and the two `catch` blocks in `_royaltyInfo` (closed by Task 5).
 
 - [ ] **Step 7: Commit**
 
@@ -408,9 +408,142 @@ git commit -m "fix: ignore ERC-2981 royalty amounts that exceed the sale price"
 
 ---
 
+### Task 5: Cover `_royaltyInfo`'s two `catch` branches
+
+**Files:**
+- Modify: `test/mocks/Mocks.sol` (add `NoERC165NFT` and `RevertingRoyaltyNFT`)
+- Test: `test/NFTMarketplace.t.sol`
+
+**Interfaces:**
+- Consumes: `_royaltyInfo` from Tasks 2 and 4 (no further changes to its body — this task only adds test coverage for branches it already contains).
+
+After Task 4, `forge coverage --report summary` still doesn't show 100% branches on `src/NFTMarketplace.sol`. Two branches inside `_royaltyInfo` are still never exercised by any mock so far:
+- The `catch` on `IERC165(nftAddress_).supportsInterface(...)` (`src/NFTMarketplace.sol:90-91`) — only fires for an NFT contract that doesn't implement ERC-165 at all, so the call reverts outright. `MockNFT` (plain OpenZeppelin `ERC721`) always answers `supportsInterface` without reverting, so it never hits this.
+- The `catch` on `IERC2981(nftAddress_).royaltyInfo(...)` (`src/NFTMarketplace.sol:97-98`) — only fires for a contract that claims ERC-2981 support via `supportsInterface` but then reverts inside `royaltyInfo` itself. No existing mock does that.
+
+This task adds one mock for each and a test proving the marketplace falls back to "no royalty, full price to seller" instead of reverting the whole sale in both cases — exactly the defensive behavior `_royaltyInfo`'s `try/catch` structure is there for.
+
+- [ ] **Step 1: Add `NoERC165NFT` to `test/mocks/Mocks.sol`**
+
+This is a minimal, hand-rolled ERC-721-like contract that deliberately has no `supportsInterface` function and no fallback, so calling it reverts (the EVM's default behavior for an unrecognized selector with no fallback). It implements just enough of ERC-721 for `NFTMarketplace` to work: `ownerOf`, `approve`, and `safeTransferFrom`.
+
+```solidity
+// Deliberately does not implement ERC-165 at all — calling supportsInterface on it reverts,
+// exercising the outer catch in NFTMarketplace._royaltyInfo
+contract NoERC165NFT {
+    mapping(uint256 => address) private _owners;
+    mapping(uint256 => address) private _tokenApprovals;
+
+    function mint(address to_, uint256 tokenId_) external {
+        _owners[tokenId_] = to_;
+    }
+
+    function ownerOf(uint256 tokenId_) external view returns (address) {
+        return _owners[tokenId_];
+    }
+
+    function approve(address to_, uint256 tokenId_) external {
+        require(msg.sender == _owners[tokenId_], "Not owner");
+        _tokenApprovals[tokenId_] = to_;
+    }
+
+    function safeTransferFrom(address from_, address to_, uint256 tokenId_) external {
+        require(_owners[tokenId_] == from_, "Not owner");
+        require(msg.sender == from_ || msg.sender == _tokenApprovals[tokenId_], "Not authorized");
+        _owners[tokenId_] = to_;
+        delete _tokenApprovals[tokenId_];
+    }
+}
+```
+
+- [ ] **Step 2: Add `RevertingRoyaltyNFT` to `test/mocks/Mocks.sol`**
+
+This one does implement ERC-165 and claims ERC-2981 support, but its `royaltyInfo` always reverts — modeled directly on `MaliciousRoyaltyNFT` from Task 4.
+
+```solidity
+// Claims ERC-2981 support via supportsInterface, but reverts inside royaltyInfo itself,
+// exercising the inner catch in NFTMarketplace._royaltyInfo
+contract RevertingRoyaltyNFT is ERC721, IERC2981 {
+    constructor() ERC721("Reverting Royalty", "RRN") {}
+
+    function mint(address to_, uint256 tokenId_) external {
+        _mint(to_, tokenId_);
+    }
+
+    function royaltyInfo(uint256, uint256) external pure returns (address, uint256) {
+        revert("royaltyInfo broken");
+    }
+
+    function supportsInterface(bytes4 interfaceId_) public view override(ERC721, IERC165) returns (bool) {
+        return interfaceId_ == type(IERC2981).interfaceId || super.supportsInterface(interfaceId_);
+    }
+}
+```
+
+- [ ] **Step 3: Write the two tests in `test/NFTMarketplace.t.sol`**
+
+```solidity
+    function testBuyNFTIgnoresRoyaltyWhenERC165CheckReverts() public {
+        NoERC165NFT noErc165NFT = new NoERC165NFT();
+        noErc165NFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        noErc165NFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(noErc165NFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(noErc165NFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+        assertEq(noErc165NFT.ownerOf(tokenId), buyerAddr);
+    }
+
+    function testBuyNFTIgnoresRoyaltyWhenRoyaltyInfoReverts() public {
+        RevertingRoyaltyNFT revertingNFT = new RevertingRoyaltyNFT();
+        revertingNFT.mint(sellerAddr, tokenId);
+
+        vm.startPrank(sellerAddr);
+        revertingNFT.approve(address(marketplace), tokenId);
+        marketplace.publishNFT(address(revertingNFT), tokenId, price);
+        vm.stopPrank();
+
+        uint256 sellerBalanceBefore = sellerAddr.balance;
+
+        vm.deal(buyerAddr, price);
+        vm.prank(buyerAddr);
+        marketplace.buyNFT{value: price}(address(revertingNFT), tokenId);
+
+        assertEq(sellerAddr.balance, sellerBalanceBefore + price);
+        assertEq(revertingNFT.ownerOf(tokenId), buyerAddr);
+    }
+```
+
+- [ ] **Step 4: Run the new tests**
+
+Run: `forge test --match-test "testBuyNFTIgnoresRoyaltyWhenERC165CheckReverts|testBuyNFTIgnoresRoyaltyWhenRoyaltyInfoReverts" -vv`
+Expected: both PASS — no code changes needed, since `_royaltyInfo`'s `try/catch` already handles both cases; this task only proves it.
+
+- [ ] **Step 5: Run the full suite and confirm 100% coverage on the marketplace contract**
+
+Run: `forge test && forge coverage --report summary`
+Expected: all tests pass; `src/NFTMarketplace.sol` back to 100% lines/statements/branches/functions.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add test/mocks/Mocks.sol test/NFTMarketplace.t.sol
+git commit -m "test: cover both catch branches in _royaltyInfo (no ERC-165, reverting royaltyInfo)"
+```
+
+---
+
 ## Phase B: ERC-20 Payment Support
 
-### Task 5: Add an optional ERC-20 payment token per listing
+### Task 6: Add an optional ERC-20 payment token per listing
 
 **Files:**
 - Modify: `src/NFTMarketplace.sol` (`NFTList` struct, `NFTListed` event, `publishNFT`)
@@ -567,14 +700,14 @@ git commit -m "feat: add optional ERC-20 payment token to listings"
 
 ---
 
-### Task 6: Pay in ERC-20 when the listing specifies a token
+### Task 7: Pay in ERC-20 when the listing specifies a token
 
 **Files:**
 - Modify: `src/NFTMarketplace.sol` (`buyNFT`, `NFTSold` event)
 - Test: `test/NFTMarketplace.t.sol`
 
 **Interfaces:**
-- Consumes: `NFTList.paymentToken` from Task 5, `_royaltyInfo` from Task 2/4.
+- Consumes: `NFTList.paymentToken` from Task 6, `_royaltyInfo` from Task 2/4.
 - Produces: `NFTSold` event gains a `paymentToken_` field (no new function signatures).
 
 - [ ] **Step 1: Write the failing test**
@@ -706,13 +839,13 @@ git commit -m "feat: accept ERC-20 payment for listings that specify a payment t
 
 ---
 
-### Task 7: ERC-20 sale with a royalty, and missing-allowance revert
+### Task 8: ERC-20 sale with a royalty, and missing-allowance revert
 
 **Files:**
 - Test: `test/NFTMarketplace.t.sol`
 
 **Interfaces:**
-- Consumes: `MockNFT2981`/`MockERC20` mocks and `buyNFT`'s ERC-20 branch, all already in place from Tasks 2, 5, and 6. No production code changes expected — if this task's tests fail, it means the ERC-20 and royalty branches don't compose correctly and Task 6's implementation needs a fix, not a new feature.
+- Consumes: `MockNFT2981`/`MockERC20` mocks and `buyNFT`'s ERC-20 branch, all already in place from Tasks 2, 6, and 7. No production code changes expected — if this task's tests fail, it means the ERC-20 and royalty branches don't compose correctly and Task 7's implementation needs a fix, not a new feature.
 
 - [ ] **Step 1: Write the tests**
 
@@ -778,13 +911,13 @@ git commit -m "test: cover ERC-20 sale combined with a royalty, and missing allo
 
 ---
 
-### Task 8: Fuzz test the ERC-20 buy path
+### Task 9: Fuzz test the ERC-20 buy path
 
 **Files:**
 - Test: `test/NFTMarketplace.t.sol`
 
 **Interfaces:**
-- Consumes: same mocks and contract surface as Task 7 — mirrors the existing `testFuzz_BuyNFTCorrectly` (ETH path) for the ERC-20 path, to keep fuzz coverage symmetric between the two payment methods.
+- Consumes: same mocks and contract surface as Task 8 — mirrors the existing `testFuzz_BuyNFTCorrectly` (ETH path) for the ERC-20 path, to keep fuzz coverage symmetric between the two payment methods.
 
 - [ ] **Step 1: Write the fuzz test**
 
@@ -838,7 +971,7 @@ git commit -m "test: fuzz the ERC-20 buy path to mirror ETH fuzz coverage"
 
 ## Phase C: Process/Tooling Polish
 
-### Task 9: Gas snapshot regression check in CI
+### Task 10: Gas snapshot regression check in CI
 
 **Files:**
 - Create: `.gas-snapshot`
@@ -874,7 +1007,7 @@ git commit -m "ci: fail the build on gas usage regressions"
 
 ---
 
-### Task 10: Deployment script
+### Task 11: Deployment script
 
 **Files:**
 - Create: `script/DeployNFTMarketplace.s.sol`
@@ -928,7 +1061,7 @@ forge script script/DeployNFTMarketplace.s.sol:DeployNFTMarketplace \
 
 ---
 
-### Task 11: Coverage floor gate in CI
+### Task 12: Coverage floor gate in CI
 
 **Files:**
 - Modify: `.github/workflows/test.yml`
@@ -980,7 +1113,7 @@ git commit -m "ci: fail the build if line coverage drops below 90%"
 
 ## Post-Plan Verification
 
-After all 11 tasks:
+After all 12 tasks:
 
 ```bash
 forge fmt --check
