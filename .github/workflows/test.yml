@@ -1,0 +1,47 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Run Forge fmt
+        run: forge fmt --check
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test -vvv
+
+      - name: Check gas snapshot
+        run: forge snapshot --check
+
+      - name: Check coverage floor
+        run: |
+          forge coverage --report lcov
+          awk -F: '/^LF:/{f+=$2} /^LH:/{h+=$2} END{
+            pct = (f > 0) ? 100 * h / f : 100
+            printf "Line coverage: %.2f%%\n", pct
+            if (pct + 0.001 < 90) { print "Coverage below 90% threshold"; exit 1 }
+          }' lcov.info
