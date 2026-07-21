@@ -7,11 +7,21 @@ import "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../../lib/openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
 import "../../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
+// Basic mintable ERC-721 mock; used for the ETH-priced happy-path tests
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock NFT", "MNFT") {}
 
     function mint(address to_, uint256 tokenId_) external {
         _mint(to_, tokenId_);
+    }
+}
+
+// Basic mintable ERC-20 mock; used for the ERC-20 payment-path tests
+contract MockERC20 is ERC20 {
+    constructor() ERC20("Mock USD", "MUSD") {}
+
+    function mint(address to_, uint256 amount_) external {
+        _mint(to_, amount_);
     }
 }
 
@@ -23,14 +33,7 @@ contract RejectEther {
     }
 }
 
-contract MockERC20 is ERC20 {
-    constructor() ERC20("Mock USD", "MUSD") {}
-
-    function mint(address to_, uint256 amount_) external {
-        _mint(to_, amount_);
-    }
-}
-
+// ERC-721 + ERC-2981 mock with a configurable default royalty; used for the royalty-split tests
 contract MockNFT2981 is ERC721, ERC2981 {
     constructor() ERC721("Mock Royalty NFT", "MRNFT") {}
 

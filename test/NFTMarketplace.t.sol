@@ -1,7 +1,4 @@
-// License
 // SPDX-License-Identifier: MIT
-
-// Solidity version
 pragma solidity ^0.8.34;
 
 import "forge-std/Test.sol";
@@ -29,13 +26,14 @@ contract NFTMarketplaceTest is Test {
         vm.stopPrank();
     }
 
+    // #### Fixture Sanity Check ####
     function testMintNFT() public {
         mockedNFT.mint(sellerAddr, tokenId);
         address nftOwner = mockedNFT.ownerOf(tokenId);
         assert(nftOwner == sellerAddr);
     }
 
-    // #### Tests Publish NFT ####
+    // #### Test Publish NFT ####
     function testPublishNFTPriceMoreThan0() public {
         vm.expectRevert("Price can not be 0");
         marketplace.publishNFT(address(mockedNFT), tokenId, 0);
@@ -58,7 +56,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftSeller == sellerAddr);
     }
 
-    // #### Test Unpublish NFT
+    // #### Test Unpublish NFT ####
     function testUnpublishNFTNotOwner() public {
         mockedNFT.mint(sellerAddr, tokenId);
         vm.expectRevert("You are not the owner of the NFT");
@@ -75,7 +73,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
-        // This test start here
+        // Act
         vm.startPrank(sellerAddr);
         marketplace.unpublishNFT(address(mockedNFT), tokenId);
         vm.stopPrank();
@@ -85,7 +83,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftSeller2 == address(0));
     }
 
-    // #### Test Buy NFT ####
+    // #### Test Buy NFT (ETH) ####
     function testBuyNFTNotExist() public {
         mockedNFT.mint(sellerAddr, tokenId);
         vm.startPrank(buyerAddr);
@@ -104,7 +102,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
-        // This test start here
+        // Act
         vm.startPrank(buyerAddr);
         vm.expectRevert("Incorrect price");
         (bool success,) = address(marketplace).call{value: 0}(
@@ -125,7 +123,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftPrice == price);
         assert(nftSeller == address(rejectEtherAddress));
 
-        // This test start here
+        // Act
         vm.startPrank(buyerAddr);
         vm.deal(buyerAddr, 1 ether);
         vm.expectRevert("Fail the payment process");
@@ -148,7 +146,7 @@ contract NFTMarketplaceTest is Test {
         assert(nftPrice == price);
         assert(nftSeller == sellerAddr);
 
-        // This test start here
+        // Act
         vm.startPrank(buyerAddr);
         vm.deal(buyerAddr, 1 ether);
         vm.deal(address(marketplace), 1 ether);
@@ -205,7 +203,7 @@ contract NFTMarketplaceTest is Test {
         assertEq(seller.balance, sellerBalanceBefore + priceArg); // Verify the seller received the payment
     }
 
-    // #### Test Royalties ####
+    // #### Test Royalties (ERC-2981) ####
     function testBuyNFTSplitsRoyaltyToReceiver() public {
         MockNFT2981 royaltyNFT = new MockNFT2981();
         address royaltyReceiver = vm.addr(4);
